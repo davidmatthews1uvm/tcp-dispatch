@@ -16,7 +16,15 @@ def vacc_get_ip():
 def default_get_ip():
     return socket.gethostbyname(socket.gethostname())
 
-def run(get_work, ip=None, get_ip=None):
+def _get_ip(ip=None, get_ip=None):
+    IP = default_get_ip()
+    if (ip is not None):
+        IP = ip
+    elif (get_ip is not None):
+        IP = get_ip()
+    return IP
+
+def run_dispatch(get_work, ip=None, get_ip=None):
     work_iter = iter(tqdm(get_work()))
 
     def shutdown():
@@ -39,24 +47,48 @@ def run(get_work, ip=None, get_ip=None):
     success = False
     while not success:
         try:
-            IP = default_get_ip()
-            
-            if (ip is not None):
-                IP = ip
-            elif (get_ip is not None):
-                IP = get_ip()
-
+            IP = _get_ip(ip=ip, get_ip=get_ip)
             with open("IDX_SERVER_PORT.txt", "w") as f:
                 f.write(f"{IP}:{PORT}")
-                
             with socketserver.TCPServer((HOST, PORT), MyTCPHandler) as server:
                 server.serve_forever()
-            
         except (OSError, PermissionError) as e:
             new_port = random.randint(0, 1<<16)
             print(f"Failed to start server on PORT: {PORT}. Trying: {new_port}")
             PORT = new_port
 
+
+def run_collect(ip=None, get_ip=None):
+    class MyTCPHandler(socketserver.BaseRequestHandler):
+        def handle(self):
+            payload_size = struct.unpack("i", self.request.recv(4))[0]
+            payload_buff = self.request.recv(payload_size)
+            payload = payload_buff.decode("utf-8")
+
+            payload_dict = json.loads(payload)
+            
+            # append to json file
+            with open(f"{payload_dict['dest_file']}", "a") as f:
+                f.write(payload + "\n")
+    HOST = "0.0.0.0"
+    PORT = 9999
+    success = False
+    tq = tqdm.tqdm(unit_scale=True)
+    while not success:
+        try:
+            IP = _get_ip(ip=ip, get_ip=get_ip)
+            with open("RESULTS_SERVER_PORT.txt", "w") as f:
+                f.write(f"{IP}:{PORT}")
+                
+            with socketserver.TCPServer((HOST, PORT), MyTCPHandler) as server:
+                while True:
+                    server.handle_request()
+                    tq.update()
+            
+        except (OSError, PermissionError) as e:
+            new_port = random.randint(0, 1<<16)
+            print(f"Failed to start server on PORT: {PORT}. Trying: {new_port}")
+            PORT = new_port
 
 ### CLIENT
 def get_server_by_file(file_str):
@@ -75,6 +107,13 @@ def get_next_job(host, port):
         print(e)
         return None
 
+
+def submit_results(host, port, payload):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect((host, port))
+        payload_size = len(payload)
+        sock.sendall(struct.pack("i", payload_size))
+        sock.sendall(payload)
 
 def time_remaining(start_time, single_work_time=0.0, run_seconds=-1.0):
     elapse_time =   (time.time() + single_work_time) - start_time
