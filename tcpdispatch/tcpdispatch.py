@@ -39,13 +39,12 @@ def run(get_work, ip=None, get_ip=None):
     success = False
     while not success:
         try:
-            IP = None
+            IP = default_get_ip()
+            
             if (ip is not None):
                 IP = ip
             elif (get_ip is not None):
                 IP = get_ip()
-            else:
-                default_get_ip()
 
             with open("IDX_SERVER_PORT.txt", "w") as f:
                 f.write(f"{IP}:{PORT}")
@@ -61,7 +60,7 @@ def run(get_work, ip=None, get_ip=None):
 
 ### CLIENT
 def get_server_by_file(file_str):
-    server, port_str = open(file_str, "r").read().split()
+    server, port_str = open(file_str, "r").read().split(":")
     port = int(port_str)
     return (server, port)
     
