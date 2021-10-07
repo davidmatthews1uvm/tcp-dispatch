@@ -61,19 +61,22 @@ def run_dispatch(get_work, ip=None, get_ip=None):
 def run_collect(ip=None, get_ip=None):
     class MyTCPHandler(socketserver.BaseRequestHandler):
         def handle(self):
+            
             payload_size = struct.unpack("i", self.request.recv(4))[0]
-            payload_buff = self.request.recv(payload_size)
-            payload = payload_buff.decode("utf-8")
+            payload = b''
+            while len(payload) < payload_size:
+                payload += self.request.recv(min(1<<16, payload_size - len(payload)))
+            payload_str = payload.decode("utf-8")
 
-            payload_dict = json.loads(payload)
+            payload_dict = json.loads(payload_str)
             
             # append to json file
             with open(f"{payload_dict['dest_file']}", "a") as f:
-                f.write(payload + "\n")
+                f.write(payload_str + "\n")
     HOST = "0.0.0.0"
     PORT = 9999
     success = False
-    tq = tqdm.tqdm(unit_scale=True)
+    tq = tqdm(unit_scale=True)
     while not success:
         try:
             IP = _get_ip(ip=ip, get_ip=get_ip)
@@ -101,11 +104,16 @@ def get_next_job(host, port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((host, port))
             payload_size = struct.unpack("i", sock.recv(4))[0]
-            payload = sock.recv(payload_size)
-        return json.loads(payload.decode("utf-8"))
+            payload = b''
+            while len(payload) < payload_size:
+                payload += sock.recv(min(1<<16, payload_size - len(payload)))
+            # payload = sock.recv(payload_size)
+            assert len(payload) == payload_size
+        payload_str = payload.decode("utf-8")
+        return json.loads(payload_str)
     except Exception as e:
         print(e)
-        return None
+        # raise e
 
 
 def submit_results(host, port, payload):
